@@ -7,14 +7,9 @@ This program helps users determine a suitable double wishbone suspension geometr
 ### How do I run it?
 This program uses various python modules that must first be installed to your python interpreter before execution. The modules used are scipy, matplotlib and numpy. 
 
-To install, run the following commands in your command prompt window (on windows):
+##### To install, the dependencies, run the following command in the same directory that contains main.py and requirements.txt:
 
-#### NumPy:
-	pip install numpy
-#### Scipy:
-	pip install scipy
-#### Matplotlib:
-	pip install matplotlib
+    pip install -r requirements.txt
 
 Once the dependencies are installed, download the main.py file and run it. This should run the simulator with the default example suspension geometry values.
 
@@ -23,18 +18,22 @@ Once the dependencies are installed, download the main.py file and run it. This 
 
 This simulator takes a number of inputs to provide an output. They are as shown below:
 
-    total_mass: float #Total mass of the vehicle in kgs
-    sprung_mass: float #Sprung mass of the vehicle in kgs
-    CG_height: float #Height of center of gravity of the vehicle
-    track_width: float #Track width of vehicle (distance between contact patches on opposite tyres)
-    ride_height: float #Static ride height of the vehicle
-    upper_inner_R: tuple[float, float] #position of the upper inner pivot of the suspension
-    lower_inner_R: tuple[float, float] #position of the lower inner pivot of the suspension
-    length_upper: float #length of the upper control arm
-    length_lower: float	#length of lower control arm
-    length_upright: float #length of upright
-    spring_stiffness: float #stiffness of the suspension spring in N/mm
-    sway_bar_stiffness: float #stiffness of the sway bar in N/mm
+        total_mass: float #Total mass of the vehicle in kgs
+        sprung_mass: float #Sprung mass of the vehicle in kgs
+        CG_height: float #Height of center of gravity of the vehicle
+    
+        track_width: float #Track width of vehicle (distance between contact patches on opposite tyres)
+        ride_height: float #Static ride height of the vehicle
+    
+        upper_inner_R: tuple[float, float] #position of the upper inner pivot of the suspension
+        lower_inner_R: tuple[float, float] #position of the lower inner pivot of the suspension
+    
+        length_upper: float #length of the upper control arm
+        length_lower: float	#length of lower control arm
+        length_upright: float #length of upright
+    
+        spring_stiffness: float #stiffness of the suspension spring in N/mm
+        sway_bar_stiffness: float #stiffness of the sway bar in N/mm
 
 *Note: all fields above are in mm unless mentioned otherwise.*
 
@@ -64,7 +63,7 @@ Once the simulation parameters are changed, an appropriate guess for the suspens
 ### What does it output?
 The simulator uses matplotlib to neatly plot and display the camber curves and roll center height curves for the left and right side suspensions individually in subplots. It also displays a visualization of the suspension geometry at static ride height along with markers for the roll center height at static ride height.
 
-IMAGE
+![Example Simulator Output](example%20output.png)
 
 ### Limitations and assumptions:
 - Assumes suspension is symmetric
