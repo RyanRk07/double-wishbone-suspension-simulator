@@ -58,7 +58,7 @@ The default example values are as follows:
 
 To change the simulation parameters, change the values for each field under the comment `#EDIT THESE VALUES TO YOUR USE CASE`
 
-Once the simulation parameters are changed, an appropriate guess for the suspension's outer pivot positions must be provided. To arrive at an accurate guess, plot the hardpoints into a graphical calculator like desmos and find the approximate positions for the outer pivots. Then, subsitute the guesses under the comment `#SUBSTITUTE <SIDE> SIDE SUSPENSION GUESSES`
+Once the simulation parameters are changed, an appropriate guess for the suspension's outer pivot positions must be provided. To arrive at an accurate guess, plot the hardpoints into a graphical calculator like desmos and find the approximate positions for the outer pivots. Then, substitute the guesses under the comment `#SUBSTITUTE <SIDE> SIDE SUSPENSION GUESSES`
 
 ### What does it output?
 The simulator uses matplotlib to neatly plot and display the camber curves and roll center height curves for the left and right side suspensions individually in subplots. It also displays a visualization of the suspension geometry at static ride height along with markers for the roll center height at static ride height.
