@@ -21,6 +21,9 @@ class car:
     length_upright: float
     spring_stiffness: float
     sway_bar_stiffness: float
+    mount_fraction: float
+    shock_mount_upper_R: tuple[float, float]
+    shock_mount_upper_L: tuple[float, float] = field(init=False)
     upper_inner_L: tuple[float, float] = field(init=False)
     lower_inner_L: tuple[float, float] = field(init=False)
 
@@ -28,6 +31,7 @@ class car:
     def __post_init__(self):
         self.upper_inner_L = (-self.upper_inner_R[0], self.upper_inner_R[1])
         self.lower_inner_L = (-self.lower_inner_R[0], self.lower_inner_R[1])
+        self.shock_mount_upper_L = (-self.shock_mount_upper_R[0], self.shock_mount_upper_R[1])
 
 def suspension_eqns(vars, upper_inner, lower_inner, L_upper, L_lower, L_upright, WHEELCENTER):
     x_Uo, y_Uo, x_Lo, y_Lo = vars
@@ -83,6 +87,16 @@ def y_at_x(p1, p2, x):
     slope = (y2 - y1)/(x2 - x1)
     return y1 + slope * (x - x1)
 
+def distance(p1, p2):
+    x1, y1 = p1
+    x2, y2 = p2
+    return math.sqrt((x1 - x2)**2 + (y1 - y2)**2)
+
+def shock_mount_pos(lower_inner, lower_outer, mount_fraction):
+    y = lower_outer[1]*(mount_fraction) + (lower_inner[1]*(1 - mount_fraction))
+    x = lower_outer[0]*(mount_fraction) + (lower_inner[0]*(1 - mount_fraction))
+    return (x, y)
+
 def simulate(car, span):
     guess_R = None
     guess_L = None
@@ -92,6 +106,12 @@ def simulate(car, span):
     camber_vals_L = []
     rc_vals_R = []
     rc_vals_L = []
+    instant_radii = []
+    shock_mount_pos_R = []
+    shock_mount_pos_L = []
+    spring_lengths_L = []
+    spring_lengths_R = []
+
     for dy in range(-span, span+1):
 
         dy_R = dy
@@ -125,6 +145,7 @@ def simulate(car, span):
         upper_outer_L = (sol_L[0], sol_L[1])
         lower_outer_L = (sol_L[2], sol_L[3])
 
+
         #Camber Simulation
         camber_R = get_camber(upper_outer_R[0], upper_outer_R[1], lower_outer_R[0], lower_outer_R[1])
         dy_vals_R.append(dy_R)
@@ -141,6 +162,8 @@ def simulate(car, span):
         if IC_R:
             rc_height_R = y_at_x(IC_R, contactPatch_R, 0)
             rc_vals_R.append(rc_height_R)
+            instant_radii.append(distance(IC_R, wc_R))
+
         IC_L = intersection(car.upper_inner_L, (sol_L[0], sol_L[1]), car.lower_inner_L, (sol_L[2], sol_L[3]))
         if IC_L:
             rc_height_L = y_at_x(IC_L, contactPatch_L, 0)
@@ -149,16 +172,25 @@ def simulate(car, span):
         guess_R = sol_R
         guess_L = sol_L
 
-        if dy ==0:
+        shock_mount_lower_L = shock_mount_pos(car.lower_inner_L, lower_outer_L, car.mount_fraction)
+        shock_mount_lower_R = shock_mount_pos(car.lower_inner_R, lower_outer_R, car.mount_fraction)
+        shock_mount_pos_L.append(shock_mount_lower_L)
+        shock_mount_pos_R.append(shock_mount_lower_R)
+        spring_lengths_L.append(distance(car.shock_mount_upper_L, shock_mount_lower_L))
+        spring_lengths_R.append(distance(car.shock_mount_upper_R, shock_mount_lower_R))
+
+        if dy == 0:
             static_L = sol_L
             static_R = sol_R
             static_rc_L = rc_height_L
             static_rc_R = rc_height_R
-            print(rc_height_R, rc_height_L)
-            print(IC_R, IC_L)
-            print(car.upper_inner_R, (sol_R[0], sol_R[1]), car.lower_inner_R, (sol_R[2], sol_R[3]))
+            static_shock_mount_L = shock_mount_lower_L
+            static_shock_mount_R = shock_mount_lower_R
+            static_spring_L = distance(static_shock_mount_L, car.shock_mount_upper_L)
+            static_spring_R = distance(static_shock_mount_R, car.shock_mount_upper_R)
 
-    return (dy_vals_R, camber_vals_R, rc_vals_R, sol_R), (dy_vals_L, camber_vals_L, rc_vals_L, sol_L), (static_L, static_R, static_rc_L, static_rc_R)
+
+    return (dy_vals_R, camber_vals_R, rc_vals_R, sol_R), (dy_vals_L, camber_vals_L, rc_vals_L, sol_L), (static_L, static_R, static_rc_L, static_rc_R, static_spring_L, static_spring_R), instant_radii, (spring_lengths_L, spring_lengths_R)
 
 def main():
     mycar = car(
@@ -178,41 +210,40 @@ def main():
         length_upright=300,
 
         spring_stiffness=35,
-        sway_bar_stiffness=15
+        sway_bar_stiffness=15,
+        mount_fraction=0.6,
+        shock_mount_upper_R = (464, 282)
     )
-    results_R, results_L, statics= simulate(mycar, 20)
+    results_R, results_L, statics, instant_radii, spring_lengths= simulate(mycar, 20)
+    spring_lengths_L, spring_lengths_R = spring_lengths
     dy_vals_R, camber_vals_R, rc_vals_R, sol_R = results_R
     dy_vals_L, camber_vals_L, rc_vals_L, sol_L = results_L
-    static_L, static_R, static_rc_L, static_rc_R = statics
+    static_L, static_R, static_rc_L, static_rc_R, static_spring_L, static_spring_R = statics
+    spring_lengths_L = np.array(spring_lengths_L) - static_spring_L
+    spring_lengths_R = np.array(spring_lengths_R) - static_spring_R
+    motion_ratio = spring_lengths_R[-1]/dy_vals_R[-1]
+    wheel_rate = mycar.spring_stiffness*motion_ratio**2
 
     # Camber Curve
     plt.subplot(3, 2, 1)
-    plt.plot(dy_vals_L, camber_vals_L, color="b")
+    plt.plot(dy_vals_L, camber_vals_L, color="b", alpha = 0.5)
+    plt.plot(dy_vals_R, camber_vals_R, color="r", alpha = 0.5)
     plt.xlabel("Suspension travel (mm)")
     plt.ylabel("Camber (deg)")
     plt.grid(True)
 
-    plt.subplot(3, 2, 2)
-    plt.plot(dy_vals_R, camber_vals_R, color="r")
-    plt.xlabel("Suspension travel (mm)")
-    plt.ylabel("Camber (deg)")
-    plt.grid(True)
 
     # Roll Center Curve
-    plt.subplot(3, 2, 3)
-    plt.plot(dy_vals_L, rc_vals_L, color="b")
+    plt.subplot(3, 2, 2)
+    plt.plot(dy_vals_L, rc_vals_L, color="b", alpha = 0.5)
+    plt.plot(dy_vals_R, rc_vals_R, color="r", alpha = 0.5)
     plt.xlabel("Suspension travel (mm)")
     plt.ylabel("Roll center height (mm)")
     plt.grid(True)
 
-    plt.subplot(3, 2, 4)
-    plt.plot(dy_vals_R, rc_vals_R, color="r")
-    plt.xlabel("Suspension travel (mm)")
-    plt.ylabel("Roll center height (mm)")
-    plt.grid(True)
 
     #Visual representation of final suspension state
-    plt.subplot(3, 2, 5)
+    plt.subplot(3, 2, 3)
     # Left side
     plt.scatter(mycar.upper_inner_L[0], mycar.upper_inner_L[1], label="upper inner")
     plt.scatter(mycar.lower_inner_L[0], mycar.lower_inner_L[1], label="lower inner")
@@ -233,6 +264,21 @@ def main():
     plt.plot((mycar.upper_inner_R[0], static_R[0]), (mycar.upper_inner_R[1], static_R[1]), label="upper arm")
     plt.plot((mycar.lower_inner_R[0], static_R[2]), (mycar.lower_inner_R[1], static_R[3]), label="lower arm")
     plt.plot((static_R[0], static_R[2]), (static_R[1], static_R[3]), label="upright")
+    plt.grid(True)
+
+    plt.subplot(3, 2, 4)
+    plt.plot(dy_vals_R, instant_radii)
+    plt.xlabel("Suspension travel (mm)")
+    plt.ylabel("Instant radius (mm)")
+    plt.grid(True)
+
+    plt.subplot(3, 2, 5)
+    plt.plot(dy_vals_L, spring_lengths_L, color="b", alpha = 0.5)
+    plt.plot(dy_vals_R, spring_lengths_R, color="r", alpha = 0.5)
+    plt.text(5, 10, f"motion ratio = {abs(motion_ratio):.2f}")
+    plt.text(5, 5, f"wheel rate = {wheel_rate:.2f}")
+    plt.xlabel("Suspension travel (mm)")
+    plt.ylabel("Spring length (mm)")
     plt.grid(True)
 
     plt.subplots_adjust(left=0.06, bottom=0.06, right=0.98, top=0.98, wspace=0.2, hspace=0.36)
