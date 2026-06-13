@@ -73,5 +73,6 @@ The simulator uses matplotlib to neatly plot and display the camber curves and r
 - Static center of gravity is assumed to be at the vehicle center line
 - Requires accurate initial guesses for fsolve to converge correctly
 - No easy to use UI to set suspension geometry to be tested
+- Assumes pushrod actuation for shock mount assembly due to small distance between shock assembly chassis mount and lower arm mount as a result of packaging constraints in order to accomodate standard length shock springs
 
 
