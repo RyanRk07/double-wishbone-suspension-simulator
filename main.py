@@ -97,6 +97,18 @@ def shock_mount_pos(lower_inner, lower_outer, mount_fraction):
     x = lower_outer[0]*(mount_fraction) + (lower_inner[0]*(1 - mount_fraction))
     return (x, y)
 
+def caluclate_installation_angle(lower_inner, lower_outer, shock_lower, shock_upper):
+    arm = np.array(lower_outer) - np.array(lower_inner)
+    shock = np.array(shock_upper) - np.array(shock_lower)
+    norm_arm = np.linalg.norm(arm)
+    norm_shock = np.linalg.norm(shock)
+    dotprod = np.dot(arm, shock)
+    cosine = np.clip(dotprod / (norm_arm*norm_shock), -1.0, 1.0)
+    angle = np.degrees(np.arccos(cosine))
+    if angle > 90:
+        angle = 180 - angle
+    return angle
+
 def simulate(car, span):
     guess_R = None
     guess_L = None
@@ -111,6 +123,7 @@ def simulate(car, span):
     shock_mount_pos_L = []
     spring_lengths_L = []
     spring_lengths_R = []
+    installation_angles = []
 
     for dy in range(-span, span+1):
 
@@ -179,6 +192,8 @@ def simulate(car, span):
         spring_lengths_L.append(distance(car.shock_mount_upper_L, shock_mount_lower_L))
         spring_lengths_R.append(distance(car.shock_mount_upper_R, shock_mount_lower_R))
 
+        installation_angles.append(caluclate_installation_angle(car.lower_inner_R, lower_outer_R, shock_mount_lower_R, car.shock_mount_upper_R))
+
         if dy == 0:
             static_L = sol_L
             static_R = sol_R
@@ -190,7 +205,7 @@ def simulate(car, span):
             static_spring_R = distance(static_shock_mount_R, car.shock_mount_upper_R)
 
 
-    return (dy_vals_R, camber_vals_R, rc_vals_R, sol_R), (dy_vals_L, camber_vals_L, rc_vals_L, sol_L), (static_L, static_R, static_rc_L, static_rc_R, static_spring_L, static_spring_R), instant_radii, (spring_lengths_L, spring_lengths_R)
+    return (dy_vals_R, camber_vals_R, rc_vals_R, sol_R), (dy_vals_L, camber_vals_L, rc_vals_L, sol_L), (static_L, static_R, static_rc_L, static_rc_R, static_spring_L, static_spring_R), instant_radii, (spring_lengths_L, spring_lengths_R), installation_angles
 
 def main():
     mycar = car(
@@ -212,22 +227,25 @@ def main():
         spring_stiffness=35,
         sway_bar_stiffness=15,
         mount_fraction=0.6,
-        shock_mount_upper_R = (464, 282)
+        shock_mount_upper_R=(464, 282)
     )
-    results_R, results_L, statics, instant_radii, spring_lengths= simulate(mycar, 20)
+    results_R, results_L, statics, instant_radii, spring_lengths, installation_angles= simulate(mycar, 20)
     spring_lengths_L, spring_lengths_R = spring_lengths
     dy_vals_R, camber_vals_R, rc_vals_R, sol_R = results_R
     dy_vals_L, camber_vals_L, rc_vals_L, sol_L = results_L
     static_L, static_R, static_rc_L, static_rc_R, static_spring_L, static_spring_R = statics
     spring_lengths_L = np.array(spring_lengths_L) - static_spring_L
     spring_lengths_R = np.array(spring_lengths_R) - static_spring_R
-    motion_ratio = spring_lengths_R[-1]/dy_vals_R[-1]
-    wheel_rate = mycar.spring_stiffness*motion_ratio**2
+    motion_ratios_L = np.array(np.gradient(spring_lengths_L, dy_vals_L))
+    wheel_rates_L = mycar.spring_stiffness*motion_ratios_L**2
+    motion_ratios_R = np.array(np.gradient(spring_lengths_R, dy_vals_R))
+    wheel_rates_R = mycar.spring_stiffness*motion_ratios_R**2
 
     # Camber Curve
     plt.subplot(3, 2, 1)
     plt.plot(dy_vals_L, camber_vals_L, color="b", alpha = 0.5)
     plt.plot(dy_vals_R, camber_vals_R, color="r", alpha = 0.5)
+    plt.text(10, 0, f"camber gain = {camber_vals_R[-1]/dy_vals_R[-1]:.2f}")
     plt.xlabel("Suspension travel (mm)")
     plt.ylabel("Camber (deg)")
     plt.grid(True)
@@ -273,12 +291,16 @@ def main():
     plt.grid(True)
 
     plt.subplot(3, 2, 5)
-    plt.plot(dy_vals_L, spring_lengths_L, color="b", alpha = 0.5)
-    plt.plot(dy_vals_R, spring_lengths_R, color="r", alpha = 0.5)
-    plt.text(5, 10, f"motion ratio = {abs(motion_ratio):.2f}")
-    plt.text(5, 5, f"wheel rate = {wheel_rate:.2f}")
+    plt.plot(dy_vals_L, wheel_rates_L, color="b", alpha = 0.5)
+    plt.plot(dy_vals_R, wheel_rates_R, color="r", alpha = 0.5)
     plt.xlabel("Suspension travel (mm)")
-    plt.ylabel("Spring length (mm)")
+    plt.ylabel("Wheel rate (N/mm)")
+    plt.grid(True)
+
+    plt.subplot(3, 2, 6)
+    plt.plot(dy_vals_R, installation_angles, color="g")
+    plt.xlabel("Suspension travel (mm)")
+    plt.ylabel("Installation angle (deg)")
     plt.grid(True)
 
     plt.subplots_adjust(left=0.06, bottom=0.06, right=0.98, top=0.98, wspace=0.2, hspace=0.36)
