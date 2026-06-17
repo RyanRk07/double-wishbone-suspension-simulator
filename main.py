@@ -6,6 +6,7 @@ from pyparsing import results
 from scipy.optimize import least_squares
 import math
 from dataclasses import dataclass, field
+from matplotlib.widgets import Slider
 
 @dataclass
 class car:
@@ -20,12 +21,13 @@ class car:
     length_lower: float
     length_upright: float
     spring_stiffness: float
-    sway_bar_stiffness: float
     mount_fraction: float
     shock_mount_upper_R: tuple[float, float]
     shock_mount_upper_L: tuple[float, float] = field(init=False)
     upper_inner_L: tuple[float, float] = field(init=False)
     lower_inner_L: tuple[float, float] = field(init=False)
+    bump_stop_gap: float
+    bump_stop_stiffness: float
 
     #all units otherwise mentioned are in mm
     def __post_init__(self):
@@ -132,11 +134,13 @@ def simulate(car, a):
     instant_loads_R = []
     instant_loads_L = []
 
-    cornering_acceleration = a * 9.18
+    cornering_acceleration = a * 9.81
     lateral_force = car.front_sprung_mass * cornering_acceleration
     load_transferred = (lateral_force * car.CG_height)/car.track_width
     print(load_transferred)
 
+    current_stiffness_L = car.spring_stiffness
+    current_stiffness_R = car.spring_stiffness
     target_load = load_transferred
     current_load_R = 0
     current_load_L = 0
@@ -190,6 +194,10 @@ def simulate(car, a):
             motion_ratio = (distance(car.shock_mount_upper_R, static_shock_mount_R)/distance(car.shock_mount_upper_R, lower_outer_R))*np.sin(installation_angle)
         else:
             motion_ratio = (distance(car.shock_mount_upper_R, shock_mount_lower_R) - static_spring_R)/dy_R
+
+        shock_compression =  static_spring_R - distance(car.shock_mount_upper_R, shock_mount_lower_R)
+        if shock_compression > car.bump_stop_gap:
+            current_stiffness_R += car.bump_stop_stiffness
 
         wheel_rate = car.spring_stiffness * (motion_ratio**2)
         wheel_rates_R.append(wheel_rate)
@@ -247,6 +255,13 @@ def simulate(car, a):
         else:
             motion_ratio = (distance(car.shock_mount_upper_L, shock_mount_lower_L) - static_spring_L) / dy_L
 
+        shock_compression =  static_spring_L - distance(car.shock_mount_upper_L, shock_mount_lower_L)
+        if shock_compression > car.bump_stop_gap:
+            print("changed L")
+            current_stiffness_L += car.bump_stop_stiffness
+        elif current_stiffness_L > car.spring_stiffness:
+            current_stiffness_L = car.spring_stiffness
+
         wheel_rate = car.spring_stiffness * (motion_ratio ** 2)
         wheel_rates_L.append(wheel_rate)
         instant_loads_L.append(current_load_L)
@@ -277,108 +292,122 @@ def main():
         length_upright=300,
 
         spring_stiffness=35,
-        sway_bar_stiffness=15,
         mount_fraction=0.6,
-        shock_mount_upper_R=(464, 282)
+        shock_mount_upper_R=(464, 282),
+        bump_stop_gap = 20,
+        bump_stop_stiffness = 100
     )
-    results_R, results_L, statics, instant_radii, spring_lengths, installation_angles, wheel_rates, instant_loads, roll_angles, gforces = simulate(mycar, 1.0)
-    gforces_L, gforces_R = gforces
-    instant_loads_L, instant_loads_R = instant_loads
-    installation_angles_L, installation_angles_R = installation_angles
-    instant_radii_L, instant_radii_R = instant_radii
-    spring_lengths_L, spring_lengths_R = spring_lengths
-    dy_vals_R, camber_vals_R, rc_vals_R, sol_R = results_R
-    dy_vals_L, camber_vals_L, rc_vals_L, sol_L = results_L
-    static_L, static_R, static_rc_L, static_rc_R, static_spring_L, static_spring_R = statics
-    wheel_rates_L, wheel_rates_R = wheel_rates
-
-    print(len(dy_vals_R), len(dy_vals_L), dy_vals_R[-1], dy_vals_L[-1], dy_vals_R[0], dy_vals_L[0])
-    print(len(wheel_rates_R), len(wheel_rates_L), wheel_rates_R[-1], wheel_rates_L[-1], wheel_rates_R[0], wheel_rates_L[0])
-    print(instant_loads_L[-1], instant_loads_R[-1])
 
 
-    # Camber Curve
-    plt.subplot(4, 2, 1)
-    plt.plot(gforces_L, camber_vals_L, color="b", alpha = 0.5)
-    plt.plot(gforces_R, camber_vals_R, color="r", alpha = 0.5)
-    plt.text(10, 0, f"camber gain = {camber_vals_R[-1]/dy_vals_R[-1]:.2f}")
-    plt.xlabel("g forces (g)")
-    plt.ylabel("Camber (deg)")
-    plt.grid(True)
+    fig = plt.figure(figsize=(12, 8))
+    plt.subplots_adjust(left=0.06, bottom=0.15, right=0.98, top=0.95, wspace=0.2, hspace=0.4)
+
+    ax_slider = plt.axes([0.25, 0.03, 0.5, 0.03])
+    g_slider = Slider(ax_slider, 'Lateral Acceleration', 0, 2, valinit=1.0, valfmt='%1.2f g')
+
+    def update_dashboard(val):
+        for i in range(1, 9):
+            plt.subplot(4, 2, i)
+            plt.cla()
+
+        a = g_slider.val
+
+        results_R, results_L, statics, instant_radii, spring_lengths, installation_angles, wheel_rates, instant_loads, roll_angles, gforces = simulate(
+            mycar, a)
+        gforces_L, gforces_R = gforces
+        instant_loads_L, instant_loads_R = instant_loads
+        installation_angles_L, installation_angles_R = installation_angles
+        instant_radii_L, instant_radii_R = instant_radii
+        spring_lengths_L, spring_lengths_R = spring_lengths
+        dy_vals_R, camber_vals_R, rc_vals_R, sol_R = results_R
+        dy_vals_L, camber_vals_L, rc_vals_L, sol_L = results_L
+        static_L, static_R, static_rc_L, static_rc_R, static_spring_L, static_spring_R = statics
+        wheel_rates_L, wheel_rates_R = wheel_rates
+
+        # Camber Curve
+        plt.subplot(4, 2, 1)
+        plt.plot(gforces_L, camber_vals_L, color="b", alpha = 0.5)
+        plt.plot(gforces_R, camber_vals_R, color="r", alpha = 0.5)
+        plt.text(10, 0, f"camber gain = {camber_vals_R[-1]/dy_vals_R[-1]:.2f}")
+        plt.xlabel("g forces (g)")
+        plt.ylabel("Camber (deg)")
+        plt.grid(True)
 
 
-    # Roll Center Curve
-    plt.subplot(4, 2, 2)
-    plt.plot(gforces_L, rc_vals_L, color="b", alpha = 0.5)
-    plt.plot(gforces_R, rc_vals_R, color="r", alpha = 0.5)
-    plt.xlabel("g forces (g)")
-    plt.ylabel("Roll center height (mm)")
-    plt.grid(True)
+        # Roll Center Curve
+        plt.subplot(4, 2, 2)
+        plt.plot(gforces_L, rc_vals_L, color="b", alpha = 0.5)
+        plt.plot(gforces_R, rc_vals_R, color="r", alpha = 0.5)
+        plt.xlabel("g forces (g)")
+        plt.ylabel("Roll center height (mm)")
+        plt.grid(True)
 
 
-    #Visual representation of final suspension state
-    plt.subplot(4, 2, 3)
-    # Left side
-    plt.scatter(mycar.upper_inner_L[0], mycar.upper_inner_L[1], label="upper inner")
-    plt.scatter(mycar.lower_inner_L[0], mycar.lower_inner_L[1], label="lower inner")
-    plt.scatter(static_L[0], static_L[1], label="upper outer")
-    plt.scatter(static_L[2], static_L[3], label="lower outer")
-    plt.scatter((static_L[0] + static_L[2]) / 2, (static_L[1] + static_L[3]) / 2, label="wheel center")
-    plt.scatter(-mycar.track_width/2, static_rc_L, label="Roll Center")
-    plt.plot((mycar.upper_inner_L[0], static_L[0]), (mycar.upper_inner_L[1], static_L[1]), label="upper arm")
-    plt.plot((mycar.lower_inner_L[0], static_L[2]), (mycar.lower_inner_L[1], static_L[3]), label="lower arm")
-    plt.plot((static_L[0], static_L[2]), (static_L[1], static_L[3]), label="upright")
-    # Right side
-    plt.scatter(mycar.upper_inner_R[0], mycar.upper_inner_R[1], label="upper inner")
-    plt.scatter(mycar.lower_inner_R[0], mycar.lower_inner_R[1], label="lower inner")
-    plt.scatter(static_R[0], static_R[1], label="upper outer")
-    plt.scatter(static_R[2], static_R[3], label="lower outer")
-    plt.scatter((static_R[0] + static_R[2]) / 2, (static_R[1] + static_R[3]) / 2, label="wheel center")
-    plt.scatter(mycar.track_width / 2, static_rc_R, label="Roll Center")
-    plt.plot((mycar.upper_inner_R[0], static_R[0]), (mycar.upper_inner_R[1], static_R[1]), label="upper arm")
-    plt.plot((mycar.lower_inner_R[0], static_R[2]), (mycar.lower_inner_R[1], static_R[3]), label="lower arm")
-    plt.plot((static_R[0], static_R[2]), (static_R[1], static_R[3]), label="upright")
-    plt.grid(True)
+        #Visual representation of final suspension state
+        plt.subplot(4, 2, 3)
+        # Left side
+        plt.scatter(mycar.upper_inner_L[0], mycar.upper_inner_L[1], label="upper inner")
+        plt.scatter(mycar.lower_inner_L[0], mycar.lower_inner_L[1], label="lower inner")
+        plt.scatter(static_L[0], static_L[1], label="upper outer")
+        plt.scatter(static_L[2], static_L[3], label="lower outer")
+        plt.scatter((static_L[0] + static_L[2]) / 2, (static_L[1] + static_L[3]) / 2, label="wheel center")
+        plt.scatter(-mycar.track_width/2, static_rc_L, label="Roll Center")
+        plt.plot((mycar.upper_inner_L[0], static_L[0]), (mycar.upper_inner_L[1], static_L[1]), label="upper arm")
+        plt.plot((mycar.lower_inner_L[0], static_L[2]), (mycar.lower_inner_L[1], static_L[3]), label="lower arm")
+        plt.plot((static_L[0], static_L[2]), (static_L[1], static_L[3]), label="upright")
+        # Right side
+        plt.scatter(mycar.upper_inner_R[0], mycar.upper_inner_R[1], label="upper inner")
+        plt.scatter(mycar.lower_inner_R[0], mycar.lower_inner_R[1], label="lower inner")
+        plt.scatter(static_R[0], static_R[1], label="upper outer")
+        plt.scatter(static_R[2], static_R[3], label="lower outer")
+        plt.scatter((static_R[0] + static_R[2]) / 2, (static_R[1] + static_R[3]) / 2, label="wheel center")
+        plt.scatter(mycar.track_width / 2, static_rc_R, label="Roll Center")
+        plt.plot((mycar.upper_inner_R[0], static_R[0]), (mycar.upper_inner_R[1], static_R[1]), label="upper arm")
+        plt.plot((mycar.lower_inner_R[0], static_R[2]), (mycar.lower_inner_R[1], static_R[3]), label="lower arm")
+        plt.plot((static_R[0], static_R[2]), (static_R[1], static_R[3]), label="upright")
+        plt.grid(True)
 
-    plt.subplot(4, 2, 4)
-    plt.plot(gforces_R, instant_radii_R, color="r", alpha = 0.5)
-    plt.plot(gforces_L, instant_radii_L, color="b", alpha = 0.5)
-    plt.xlabel("g forces (g)")
-    plt.ylabel("Instant radius (mm)")
-    plt.grid(True)
+        plt.subplot(4, 2, 4)
+        plt.plot(gforces_R, instant_radii_R, color="r", alpha = 0.5)
+        plt.plot(gforces_L, instant_radii_L, color="b", alpha = 0.5)
+        plt.xlabel("g forces (g)")
+        plt.ylabel("Instant radius (mm)")
+        plt.grid(True)
 
-    plt.subplot(4, 2, 5)
-    plt.plot(gforces_L, wheel_rates_L, color="b", alpha = 0.5)
-    plt.plot(gforces_R, wheel_rates_R, color="r", alpha = 0.5)
-    plt.xlabel("g forces (g)")
-    plt.ylabel("Wheel rate (N/mm)")
-    plt.grid(True)
+        plt.subplot(4, 2, 5)
+        plt.plot(gforces_L, wheel_rates_L, color="b", alpha = 0.5)
+        plt.plot(gforces_R, wheel_rates_R, color="r", alpha = 0.5)
+        plt.xlabel("g forces (g)")
+        plt.ylabel("Wheel rate (N/mm)")
+        plt.grid(True)
 
-    plt.subplot(4, 2, 6)
-    plt.plot(gforces_R, installation_angles_R, color="r", alpha = 0.5)
-    plt.plot(gforces_L, installation_angles_L, color="b", alpha = 0.5)
-    plt.xlabel("g forces (g)")
-    plt.ylabel("Installation angle (deg)")
-    plt.grid(True)
+        plt.subplot(4, 2, 6)
+        plt.plot(gforces_R, installation_angles_R, color="r", alpha = 0.5)
+        plt.plot(gforces_L, installation_angles_L, color="b", alpha = 0.5)
+        plt.xlabel("g forces (g)")
+        plt.ylabel("Installation angle (deg)")
+        plt.grid(True)
 
-    plt.subplot(4, 2, 7)
-    plt.plot(gforces_L, instant_loads_L, color="b", alpha = 0.5)
-    plt.plot(gforces_R, instant_loads_R, color="r", alpha = 0.5)
-    plt.xlabel("g forces (g)")
-    plt.ylabel("Change in load (N)")
-    plt.grid(True)
+        plt.subplot(4, 2, 7)
+        plt.plot(gforces_L, instant_loads_L, color="b", alpha = 0.5)
+        plt.plot(gforces_R, instant_loads_R, color="r", alpha = 0.5)
+        plt.xlabel("g forces (g)")
+        plt.ylabel("Change in load (N)")
+        plt.grid(True)
 
-    plt.subplot(4, 2, 8)
-    if len(gforces_R) < len(gforces_L):
-        plt.plot(gforces_R, roll_angles, color="g", alpha = 0.5)
-    else:
-        plt.plot(gforces_L, roll_angles, color="g", alpha = 0.5)
-    plt.xlabel("g forces (g)")
-    plt.ylabel("Body roll angle (deg)")
-    plt.grid(True)
+        plt.subplot(4, 2, 8)
+        if len(gforces_R) < len(gforces_L):
+            plt.plot(gforces_R, roll_angles, color="g", alpha = 0.5)
+        else:
+            plt.plot(gforces_L, roll_angles, color="g", alpha = 0.5)
+        plt.xlabel("g forces (g)")
+        plt.ylabel("Body roll angle (deg)")
+        plt.grid(True)
 
-    plt.subplots_adjust(left=0.06, bottom=0.06, right=0.98, top=0.98, wspace=0.2, hspace=0.36)
-    # plt.tight_layout()
+        fig.canvas.draw_idle()
+
+    g_slider.on_changed(update_dashboard)
+    update_dashboard(1.0)
     plt.show()
 
 main()
